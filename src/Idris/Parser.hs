@@ -1581,6 +1581,7 @@ pCodegen = try (do reserved "C"; return ViaC)
        <|> try (do reserved "JavaScript"; return ViaJavaScript)
        <|> try (do reserved "Node"; return ViaNode)
        <|> try (do reserved "LLVM"; return ViaLLVM)
+       <|> try (do reserved "CLaSH"; return ViaCLaSH)
        <|> try (do reserved "Bytecode"; return Bytecode)
 
 pDirective :: SyntaxInfo -> IParser [PDecl]

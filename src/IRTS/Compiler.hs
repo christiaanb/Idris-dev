@@ -17,6 +17,9 @@ import Util.LLVMStubs
 #endif
 import IRTS.Inliner
 
+import IRTS.CodeGenCLaSH
+import CLaSH.Primitives.Util
+
 import Idris.AbsSyntax
 import Idris.UnusedArgs
 
@@ -72,6 +75,8 @@ compile codegen f tm
         cpu <- targetCPU
         optimize <- optLevel
         iLOG "Building output"
+        primMap       <- liftIO $ generatePrimMap ["."]
+        clashBindings <- createBindingsCLaSH tm (concat used) primMap
         case checked of
             OK c -> liftIO $ case codegen of
                                   ViaC ->
@@ -85,6 +90,7 @@ compile codegen f tm
                                   ViaNode ->
                                     codegenJavaScript Node c f outty
                                   ViaLLVM -> codegenLLVM c triple cpu optimize f outty
+                                  ViaCLaSH -> codeGenCLaSH clashBindings primMap
 
                                   Bytecode -> dumpBC c f
             Error e -> fail $ show e 
