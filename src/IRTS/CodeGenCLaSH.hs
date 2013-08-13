@@ -20,9 +20,9 @@ import           Data.Either                  (partitionEithers)
 import           Data.HashMap.Lazy            (HashMap)
 import qualified Data.HashMap.Lazy            as HashMap
 import           Data.Maybe                   (catMaybes,fromMaybe)
-import           Control.Lens                 ((%=),_1,_2,makeLenses,view)
+import           Control.Lens                 ((%=),_1,_2,_3,makeLenses,view)
 import qualified Unbound.LocallyNameless.Name as U
-import           Unbound.LocallyNameless      (Rep,bind,embed,makeName,name2String,name2Integer,runFreshM,runFreshMT,string2Name,unbind,unembed)
+import           Unbound.LocallyNameless      (Bind,Rep,bind,embed,makeName,name2String,name2Integer,runFreshM,runFreshMT,string2Name,unbind,unembed)
 
 import Debug.Trace
 
@@ -55,9 +55,10 @@ import Idris.UnusedArgs
 
 import Debug.Trace
 
-type MkTyDConState = (HashMap C.TyConName C.TyCon, HashMap C.TyConName [C.DataCon])
+type MkTyDConState = (HashMap C.TyConName C.TyCon, HashMap C.TyConName [C.DataCon], HashMap C.DcName C.DataCon)
 type R    = Reader MkTyDConState
 type SR a = StateT MkTyDConState R a
+type CoreAlt = Bind C.Pat C.Term
 
 instance Monad m => MonadUnique (StateT Int m) where
   getUniqueM = do
@@ -106,13 +107,13 @@ isDConDef (_,DCon _ _,_) = True
 isDConDef _              = False
 
 makeAllTyDataCons :: [(Name,NameType,Type)]
-                  -> (HashMap C.TyConName C.TyCon,HashMap C.TyConName [C.DataCon])
+                  -> MkTyDConState
 makeAllTyDataCons tyDecls =
   let s = Reader.runReader (State.execStateT
                               (do mapM_ makeTyCon (filter isTyConDef tyDecls)
                                   mapM_ makeDataCon (filter isDConDef tyDecls)
                               )
-                              (HashMap.empty,HashMap.empty)
+                              (HashMap.empty,HashMap.empty,HashMap.empty)
                            ) s
   in  s
 
@@ -140,6 +141,7 @@ makeDataCon k@(n,DCon t a,ty) = do
     Just (tc,_) -> do
       _1 %= HashMap.insert dcName liftedDc
       _2 %= HashMap.insertWith (++) (C.tyConName tc) [dc]
+      _3 %= HashMap.insert dcName dc
     Nothing -> error $ "Huh?: " ++ show ty
 
 makeTyCon (n,TCon t a,ty) = do
@@ -167,6 +169,13 @@ toTyCon tcN = fmap ( fromMaybe (error $ "No TyCon named: " ++ name2String tcN)
                    . HashMap.lookup tcN
                    )
             $ view _1
+
+toDataCon :: C.DcName
+          -> R C.DataCon
+toDataCon dcN = fmap ( fromMaybe (error $ "No DataCon named: " ++ name2String dcN)
+                   . HashMap.lookup dcN
+                   )
+              $ view _3
 
 toCoreName :: Rep a => Name -> U.Name a
 toCoreName (UN s)   = string2Name s
@@ -268,6 +277,7 @@ scToTerm primMap bndrs sc@(Case n alts) = do
                      Just (Left (C.Id n' t'))     -> C.Var (unembed t') n'
                      Just (Right (C.TyVar n' t')) -> C.Prim (C.PrimCo (C.mkTyVarTy (unembed t') n'))
                      Nothing -> error ("scrut: " ++ show bndrs ++ show sc)
+  alts <- mapM (toCoreAlt primMap bndrs) alts
   error $ C.showDoc scrut
 
 
@@ -337,6 +347,15 @@ toCoreTerm primMap = term
     constant c@(AType _) = C.Prim <$> C.PrimCo <$> lift (toCoreType [] (Constant c))
     constant (BI i)      = return $! (C.Literal $! C.IntegerLiteral i)
     constant c           = error $ "constant: " ++ showConstant c
+
+toCoreAlt :: PrimMap
+          -> [(Name,Either C.Id C.TyVar)]
+          -> CaseAlt
+          -> MaybeT R CoreAlt
+toCoreAlt primMap bndrs (ConCase n i ns t) = do
+   dc <- lift $ toDataCon (toCoreName n)
+   error $ show (dc,i,ns,t)
+toCoreAlt _ _ a = error $ "OtherAlt" ++ show a
 
 isTypeLike :: C.Term
            -> Maybe C.Type
