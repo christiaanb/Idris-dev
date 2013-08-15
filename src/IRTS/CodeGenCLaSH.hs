@@ -20,9 +20,10 @@ import           Data.Either                  (lefts)
 import           Data.HashMap.Lazy            (HashMap)
 import qualified Data.HashMap.Lazy            as HashMap
 import           Data.Maybe                   (catMaybes,fromMaybe)
-import           Control.Lens                 ((%=),_1,_2,_3,makeLenses,view)
+import           Control.Lens                 ((%=),_1,_2,_3,makeLenses,view,(^.))
 import qualified Unbound.LocallyNameless.Name as U
-import           Unbound.LocallyNameless      (Bind,Rep,bind,embed,makeName,name2String,name2Integer,rebind,runFreshM,runFreshMT,string2Name,unbind,unembed)
+import           Unbound.LocallyNameless.Ops  (unsafeUnbind)
+import           Unbound.LocallyNameless      (Bind,Rep,bind,embed,makeName,name2String,name2Integer,rebind,runFreshM,runFreshMT,string2Name,unembed)
 
 import Debug.Trace
 
@@ -84,6 +85,7 @@ createBindingsCLaSH tm used primMap = do
       decs      = filter ((`elem` used) . fst) ctxtList
       dcTcState = makeAllTyDataCons (map defToTyDataCon dcTyCons)
       terms     = map (defToTerm primMap dcTcState) decs
+  liftIO $ putStrLn $ unlines $ map (\(n,d) -> C.showDoc n ++ ": " ++ C.showDoc (C.dcType d)) $ HashMap.toList (dcTcState ^. _3)
   mapM traceUnused used
   return $! HashMap.fromList (catMaybes terms)
 
@@ -201,6 +203,21 @@ replaceNameIndex :: Integer -> U.Name a -> U.Name a
 replaceNameIndex i (U.Nm r (s,_)) = U.Nm r (s,i)
 replaceNameIndex _ n              = n
 
+toCoreTypeT :: Bool -> [(C.TyName,(C.Kind,Type))] -> [(Name,Either C.Id C.TyVar)] -> Type -> MaybeT R C.Type
+toCoreTypeT refKI ns bndrs t = do
+  tC <- toCoreType refKI ns bndrs t
+  return $! toCoreTypeT' tC
+
+toCoreTypeT' :: C.Type -> C.Type
+toCoreTypeT' tC = case (C.tyView tC) of
+  (C.TyConApp tc args) -> case (name2String $ C.tyConName tc) of
+      "Builtins.fromInteger" -> (last args)
+      "@Builtins.Num$[Nat].0.Builtins.#!fromInteger" -> (last args)
+      "@Builtins.Num$[Nat].0.Builtins.#!fromInteger.0.#fromInteger'" -> (last args)
+      _ -> C.mkTyConApp tc (map toCoreTypeT' args)
+  (C.FunTy arg res) -> C.mkFunTy (toCoreTypeT' arg) (toCoreTypeT' res)
+  _ -> tC
+
 toCoreType :: Bool -> [(C.TyName,(C.Kind,Type))] -> [(Name,Either C.Id C.TyVar)] -> Type -> MaybeT R C.Type
 toCoreType refKI ns bndrs t@(Bind n (Pi ki) tt)
   | looksLikeKind refKI ns ki
@@ -212,7 +229,7 @@ toCoreType refKI ns bndrs t@(Bind n (Pi ki) tt)
 
 toCoreType refKI ns bndrs t@(Bind n (Pi arg) res) = do
   let tvN = toCoreName n
-  C.mkFunTy <$> toCoreType refKI ns bndrs arg <*> toCoreType refKI ((tvN,error $ "unexpected kind: " ++ show arg):ns) bndrs res
+  C.mkFunTy <$> toCoreType refKI ns bndrs arg <*> toCoreType refKI ((tvN,(error $ "unexpected kind: " ++ show arg,arg)):ns) bndrs res
 
 toCoreType refKI ns bndrs t@(P (TCon _ _) n _) = C.mkTyConTy <$> lift (toTyCon (toCoreName n))
 toCoreType refKI ns bndrs t@(P (DCon _ _) n _) = C.mkTyConTy <$> lift (toTyCon (toCoreName n))
@@ -222,11 +239,11 @@ toCoreType refKI ns bndrs t@(P Bound n _)      = case lookup n bndrs of
                                                    Just (Right tv) -> return $! C.mkTyVarTy (unembed $ C.varKind tv) (C.varName tv)
                                                    Nothing -> error ("toCoreType Bound notfound: " ++ showTerm t ++ show bndrs)
 toCoreType refKI ns bndrs t@(App ty1 ty2) = C.AppTy <$> toCoreType refKI ns bndrs ty1 <*> toCoreType refKI ns bndrs ty2
-toCoreType refKI ns bndrs t@(V i) = let (tyN,(tyK,_)) = maybe (error ("Index: " ++ show i ++ " not found in: " ++ show ns)) id (safeIndex ns i)
+toCoreType refKI ns bndrs t@(V i) = let (tyN,(tyK,_)) = maybe (error ("Index(toCoreType): " ++ show i ++ " not found in: " ++ show ns)) id (safeIndex ns i)
                                     in return $! C.mkTyVarTy tyK tyN
-toCoreType refKI ns bndrs t@(Constant (AType (ATInt ITBig))) = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name "GHC.Integer.Type.Integer") C.liftedTypeKind 0 C.IntRep)
+toCoreType refKI ns bndrs t@(Constant (AType (ATInt ITBig))) = return C.intPrimTy -- return (C.mkTyConTy $ C.mkPrimTyCon (string2Name "GHC.Integer.Type.Integer") C.liftedTypeKind 0 C.IntRep)
 toCoreType refKI ns bndrs t@(Constant (AType (ATInt ITChar))) = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name "Char") C.liftedTypeKind 0 C.VoidRep)
-toCoreType refKI ns bndrs t@(Constant (AType (ATInt ITNative))) = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name "GHC.Prim.Int") C.liftedTypeKind 0 C.IntRep)
+toCoreType refKI ns bndrs t@(Constant (AType (ATInt ITNative))) = return C.intPrimTy -- return (C.mkTyConTy $ C.mkPrimTyCon (string2Name "GHC.Integer.Type.Integer") C.liftedTypeKind 0 C.IntRep)
 toCoreType refKI ns bndrs t@(Constant (AType (ATInt (ITFixed _)))) = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name $ show t) C.liftedTypeKind 0 C.IntRep)
 toCoreType refKI ns bndrs t@(Constant (AType (ATInt (ITVec _ _)))) = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name $ show t) C.liftedTypeKind 0 C.IntRep)
 toCoreType refKI ns bndrs t@(Constant (AType ATFloat)) = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name "Float") C.liftedTypeKind 0 C.VoidRep)
@@ -246,7 +263,7 @@ looksLikeKind :: Bool
 looksLikeKind _ ns (TType _)           = True
 looksLikeKind refKI ns (Bind n (Pi ki) tt) = looksLikeKind refKI ns ki && looksLikeKind refKI ((toCoreName n,(error "lookslikekind",ki)):ns) tt
 looksLikeKind _ ns (P (TCon _ _) n@(NS (UN "Nat") ["Nat","Prelude"]) _) = True
-looksLikeKind True ns (V i) = maybe (error ("Index: " ++ show i ++ " not found in: " ++ show ns)) (looksLikeKind True ns . snd . snd) (safeIndex ns i)
+-- looksLikeKind True ns (V i) = maybe (error ("Index: " ++ show i ++ " not found in: " ++ show ns)) (looksLikeKind True ns . snd . snd) (safeIndex ns i)
 looksLikeKind _ _ k                   = False
 
 toCoreKind :: [(C.TyName,(C.Kind,Type))] -> Type -> MaybeT R C.Kind
@@ -264,10 +281,10 @@ defToTerm :: PrimMap
           -> Maybe (C.TmName,(String,(C.Type,C.Term)))
 defToTerm primMap _ (n,_)
   | HashMap.member (pack $ name2String $ (toCoreName n :: C.TmName)) primMap = Nothing
-defToTerm primMap s (n,CaseOp _ _ ty _ _ _ _ ns sc) = trace ("== " ++ show n ++ " ==:\nTy: " ++ show ty ++ "\nTm:\n" ++ show sc) $ flip Reader.runReader s $ do
+defToTerm primMap s (n,CaseOp _ _ ty _ _ ns sc _ _) = trace ("== " ++ show n ++ " ==:\nTy: " ++ show ty ++ "\nBndrs: " ++ show ns ++ "\nTm:\n" ++ show sc) $ flip Reader.runReader s $ do
   let tmName   = toCoreName n
       tmString = show n
-  tyC <- fmap (maybe (error $ "defToTerm: " ++ showTerm ty) id) $ runMaybeT $ toCoreType False [] [] ty
+  tyC <- fmap (maybe (error $ "defToTerm: " ++ showTerm ty) id) $ runMaybeT $ toCoreTypeT False [] [] ty
   let (args,resTy) = splitFunForallTy tyC
       bndrs        = zipWith (\n ds -> case ds of { Left (C.TyVar n' t) -> Right (C.TyVar n' t)
                                                   ; Right t             -> Left  (C.Id (toCoreName n) (embed t))
@@ -275,9 +292,12 @@ defToTerm primMap s (n,CaseOp _ _ ty _ _ _ _ ns sc) = trace ("== " ++ show n ++ 
   result <- runMaybeT $ do { scC <- scToTerm primMap [] (zip ns bndrs) sc
                            ; let termC  = C.mkAbstraction scC bndrs
                            ; let res    = (tmName,(tmString,(tyC,termC)))
-                           ; return res
+                           ; let resTy  = runFreshM $ C.termType termC
+                           ; trace ("CoreTy: " ++ C.showDoc tyC ++ "\nCoreTerm:\n" ++ C.showDoc termC) $
+                               traceIf (tyC /= resTy) ("TYPES DIFFER for " ++ tmString ++ ":\nExpected: " ++ C.showDoc tyC ++ "\nCalculated: " ++ C.showDoc resTy) $
+                                 return res
                            }
-  trace ("CoreTy: " ++ C.showDoc tyC ++ "\nCoreTerm:\n" ++ maybe "" (C.showDoc . snd . snd . snd) result) $ return result
+  return result
   -- return Nothing
 
 defToTerm _ _ _ = Nothing
@@ -296,7 +316,7 @@ scToTerm primMap tvs bndrs sc@(Case n alts) = do
   alts <- mapM (toCoreAlt primMap tvs bndrs) alts
   ty   <- MaybeT $ return (case alts of
                             { []      -> Nothing
-                            ; (alt:_) -> Just $ runFreshM (C.termType =<< (snd <$> unbind alt))
+                            ; (alt:_) -> Just $ runFreshM (C.termType (snd $ unsafeUnbind alt))
                             }
                           )
   return $! C.Case scrut ty alts
@@ -319,7 +339,7 @@ toCoreTerm primMap = term
         Just bndr -> case snd bndr of
           Left  (C.Id n t)    -> return $! C.Var (unembed t) n
           Right (C.TyVar n t) -> return $! C.Prim (C.PrimCo (C.mkTyVarTy (unembed t) n))
-        Nothing -> error ("Index: " ++ show i ++ " not found in: " ++ show bndrs)
+        Nothing -> error ("Index(term): " ++ show i ++ " not found in: " ++ show bndrs)
 
     term tvs bndrs (Bind n (Lam bndr) t) =
       case looksLikeKind True tvs bndr of
@@ -330,10 +350,10 @@ toCoreTerm primMap = term
           tC     <- term ((tvN,(bndrKi,bndr)):tvs) ((n,Right tv):bndrs) t
           return $! C.TyLam $! bind tv tC
         False -> do
-          bndrTy <- toCoreType True tvs bndrs bndr
-          let bndr = C.Id (toCoreName n) (embed bndrTy)
-          tC     <- term tvs ((n,Left bndr):bndrs) t
-          return $! C.Lam $! bind bndr tC
+          bndrTy <- toCoreTypeT True tvs bndrs bndr
+          let id_ = C.Id (toCoreName n) (embed bndrTy)
+          tC     <- term ((toCoreName n,(error "lookslikekind",bndr)):tvs) ((n,Left id_):bndrs) t
+          return $! C.Lam $! bind id_ tC
 
     term tvs bndrs (Bind n (Pi bndr) t) =
       case looksLikeKind True tvs bndr of
@@ -345,19 +365,20 @@ toCoreTerm primMap = term
           -- tC     <- term (tvs) ((n,Right tv):bndrs) t
           return $! C.TyLam $! bind tv tC
         False -> do
-          bndrTy <- toCoreType True tvs bndrs bndr
-          let bndr = C.Id (toCoreName n) (embed bndrTy)
-          tC     <- term tvs ((n,Left bndr):bndrs) t
-          return $! C.Lam $! bind bndr tC
+          bndrTy <- toCoreTypeT True tvs bndrs bndr
+          let id_ = C.Id (toCoreName n) (embed bndrTy)
+          tC     <- term ((toCoreName n,(error "lookslikekind",bndr)):tvs) ((n,Left id_):bndrs) t
+          return $! C.Lam $! bind id_ tC
 
     term _ _ e@(Bind n bndr t) = error ("term(Bind n bndr t): " ++ showTerm e)
 
     term tvs bndrs (App t1 t2) = do
       t1C <- term tvs bndrs t1
       t2C <- term tvs bndrs t2
-      case isTypeLike t2C of
+      tyM <- lift $ isTypeLike t2C
+      case tyM of
         Nothing -> return (C.App t1C t2C)
-        Just ty -> return (C.TyApp t1C ty)
+        Just ty -> return (C.TyApp t1C $ toCoreTypeT' ty)
 
     term tvs bndrs (Constant c) = constant tvs bndrs c
 
@@ -377,8 +398,17 @@ toCoreTerm primMap = term
           nBS  = pack (name2String nC)
       case HashMap.lookup nBS primMap of
         Just (BlackBox {}) -> do
-          tC <- toCoreType True tvs bndrs t
+          tC <- toCoreTypeT True tvs bndrs t
           return $ C.Prim (C.PrimFun nC tC)
+        Just (Primitive _ Dictionary) -> do
+          tC <- toCoreTypeT True tvs bndrs t
+          let liftedFun = C.AlgTyCon { C.tyConName = toCoreName n
+                                     , C.tyConKind = tC
+                                     , C.tyConArity = length $ fst $ splitFunForallTy tC
+                                     , C.algTcRhs = C.DataTyCon []
+                                     , C.isDictTyCon = False
+                                     }
+          return $ C.Prim (C.PrimCo (C.mkTyConTy liftedFun))
         Nothing -> case nt of
           (DCon _ _) -> do
             dc <- lift $ toDataCon (toCoreName n)
@@ -388,15 +418,18 @@ toCoreTerm primMap = term
             Just (Right (C.TyVar n' t')) -> return $! C.Prim (C.PrimCo (C.mkTyVarTy (unembed t') n'))
             Nothing -> error $ "Bound var " ++ show (n,t) ++ " not found in: " ++ show bndrs
           Ref -> do
-            tC <- toCoreType True tvs bndrs t
-            trace ("pvar REF: " ++ show n ++ " : " ++ show t) $! return $! C.Var tC nC
+            tC <- toCoreTypeT True tvs bndrs t
+            let (_,resTy) = splitFunForallTy tC
+            if resTy == C.liftedTypeKind
+              then trace ("pvar REF(TY): " ++ show n ++ " : " ++ show t) $! return $! C.Prim (C.PrimCo $ C.mkTyVarTy tC (toCoreName n))
+              else trace ("pvar REF(TM): " ++ show n ++ " : " ++ show t) $! return $! C.Var tC nC
           (TCon _ _) -> do
             tc <- lift $ toTyCon (toCoreName n)
             return $! C.Prim (C.PrimCo (C.mkTyConTy tc))
 
-    constant tvs bndrs c@(AType _) = C.Prim <$> C.PrimCo <$> toCoreType True tvs bndrs (Constant c)
-    constant tvs bndrs c@(StrType) = C.Prim <$> C.PrimCo <$> toCoreType True tvs bndrs (Constant c)
-    constant tvs bndrs c@(PtrType) = C.Prim <$> C.PrimCo <$> toCoreType True tvs bndrs (Constant c)
+    constant tvs bndrs c@(AType _) = C.Prim <$> C.PrimCo <$> toCoreTypeT True tvs bndrs (Constant c)
+    constant tvs bndrs c@(StrType) = C.Prim <$> C.PrimCo <$> toCoreTypeT True tvs bndrs (Constant c)
+    constant tvs bndrs c@(PtrType) = C.Prim <$> C.PrimCo <$> toCoreTypeT True tvs bndrs (Constant c)
     constant tvs bndrs (BI i)      = return $! C.Literal $! C.IntegerLiteral i
     constant tvs bndrs (Str s)     = return $! C.Literal $! C.StringLiteral s
     constant tvs bndrs c           = error $ "constant: " ++ showConstant c
@@ -408,10 +441,14 @@ toCoreAlt :: PrimMap
           -> MaybeT R CoreAlt
 toCoreAlt primMap tvs bndrs (ConCase n i ns sc) = do
    dc <- lift $ toDataCon (toCoreName n)
-   let tys = C.dcArgTys dc
+   let tys = map (either (unembed . C.varKind) id) . fst . splitFunForallTy $ C.dcType dc
        ids = zipWith (\n t -> C.Id (toCoreName n) (embed t)) ns tys
+       idsR = catMaybes $ zipWith (\n t -> case t of
+                                             Left _   -> Nothing
+                                             Right ty -> Just $! C.Id (toCoreName n) (embed ty)
+                                  ) ns (fst . splitFunForallTy $ C.dcType dc)
    t  <- scToTerm primMap tvs (zip ns (map Left ids) ++ bndrs) sc
-   return $! bind (C.DataPat (embed dc) (rebind [] ids)) t
+   return $! bind (C.DataPat (embed dc) (rebind [] idsR)) t
 
 toCoreAlt primMap tvs bndrs (ConstCase (I i) sc) = do
   t <- scToTerm primMap tvs bndrs sc
@@ -423,12 +460,28 @@ toCoreAlt primMap tvs bndrs (DefaultCase sc) =
 toCoreAlt _ _ _ a = error $ "OtherAlt: " ++ show a
 
 isTypeLike :: C.Term
-           -> Maybe C.Type
-isTypeLike (C.Prim (C.PrimCo t)) = Just t
-isTypeLike (C.TyApp t ty)        = case isTypeLike t of
-                                     Just ty' -> Just $! C.AppTy ty' ty
-                                     Nothing -> Nothing
-isTypeLike t                     = Nothing
+           -> R (Maybe C.Type)
+isTypeLike (C.Prim (C.PrimCo t)) = return $! Just t
+-- isTypeLike (C.Prim ())
+isTypeLike (C.TyApp t ty)        = do tyM <- isTypeLike t
+                                      case tyM of
+                                        Just ty' -> return $! Just $! C.AppTy ty' ty
+                                        Nothing  -> return $! Nothing
+isTypeLike (C.Lam b)             = do let (bndr,res) = unsafeUnbind b
+                                      tyM <- isTypeLike res
+                                      case tyM of
+                                        Just ty' -> return $! Just $! C.mkFunTy (unembed $ C.varType bndr) ty'
+                                        Nothing  -> return $! Nothing
+isTypeLike (C.App e (C.Data dc)) = do tyM <- isTypeLike e
+                                      case tyM of
+                                        Just ty' -> do tc <- toTyCon (U.translate $ C.dcName dc)
+                                                       return $! Just (C.AppTy ty' (C.mkTyConTy tc))
+                                        Nothing  -> return $! Nothing
+isTypeLike (C.App e (C.Literal (C.IntegerLiteral i))) = do tyM <- isTypeLike e
+                                                           case tyM of
+                                                             Just ty' -> return $! Just (C.AppTy ty' (C.LitTy (C.NumTy $ fromInteger i)))
+                                                             Nothing  -> return $! Nothing
+isTypeLike t                     = return $! Nothing
 
 splitFunTy :: C.Type -> ([C.Type],C.Type)
 splitFunTy = go []
@@ -439,14 +492,14 @@ splitFunTy = go []
 splitForallTy :: C.Type -> ([C.TyVar],C.Type)
 splitForallTy = go []
   where
-    go args (C.ForAllTy b) = let (tv,ty) = runFreshM (unbind b)
+    go args (C.ForAllTy b) = let (tv,ty) = unsafeUnbind b
                              in  go (tv:args) ty
     go args ty             = (reverse args,ty)
 
 splitFunForallTy :: C.Type -> ([Either C.TyVar C.Type],C.Type)
 splitFunForallTy = go []
   where
-    go args (C.ForAllTy b) = let (tv,ty) = runFreshM (unbind b)
+    go args (C.ForAllTy b) = let (tv,ty) = unsafeUnbind b
                              in  go (Left tv:args) ty
     go args (C.tyView -> C.FunTy arg res) = go (Right arg:args) res
     go args ty                            = (reverse args,ty)
