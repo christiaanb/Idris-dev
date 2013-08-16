@@ -10,6 +10,7 @@ where
 import           Control.Arrow                (first)
 import           Control.Applicative          ((<$>),(<*>),pure)
 import           Control.Monad.Trans          (MonadTrans)
+import           Control.Monad.Trans.Error    (ErrorT(..))
 import           Control.Monad.Trans.Maybe    (MaybeT(..),runMaybeT)
 import           Control.Monad.Reader         (Reader)
 import qualified Control.Monad.Reader         as Reader
@@ -42,10 +43,12 @@ import qualified CLaSH.Rewrite.Util as C
 
 import CLaSH.Driver
 import CLaSH.Driver.Types
+import CLaSH.Netlist.Util (coreTypeToHWType)
+import CLaSH.Netlist.Types (HWType(..))
 import CLaSH.Primitives.Types
 import CLaSH.Primitives.Util
 import CLaSH.Rewrite.Types (DebugLevel(..))
-import CLaSH.Util (MonadUnique(..),traceIf)
+import CLaSH.Util (MonadUnique(..),curLoc,traceIf)
 
 -- Local imports
 import Core.CaseTree
@@ -72,7 +75,7 @@ codeGenCLaSH :: BindingMap
              -> PrimMap
              -> IO ()
 codeGenCLaSH bindingMap primMap =
-  generateVHDL bindingMap HashMap.empty HashMap.empty primMap DebugApplied
+  generateVHDL bindingMap HashMap.empty HashMap.empty primMap idrisTypeToHWType DebugNone
 
 createBindingsCLaSH :: Term
                     -> [Name]
@@ -139,7 +142,9 @@ makeDataCon k@(n,DCon t a,ty) = do
                     , C.dcUnivTyVars = map C.varName tyVars
                     , C.dcExtTyVars  = []
                     }
-      liftedDc = C.AlgTyCon { C.tyConName = dcName
+
+      tcName   = toCoreName n
+      liftedDc = C.AlgTyCon { C.tyConName = tcName
                             , C.tyConKind = dcTy
                             , C.tyConArity = (length tyVars + length argTys)
                             , C.algTcRhs = C.DataTyCon []
@@ -148,7 +153,7 @@ makeDataCon k@(n,DCon t a,ty) = do
 
   case (C.splitTyConAppM resTy) of
     Just (tc,_) -> do
-      _1 %= HashMap.insert dcName liftedDc
+      _1 %= HashMap.insert tcName liftedDc
       _2 %= HashMap.insertWith (++) (C.tyConName tc) [dc]
       _3 %= HashMap.insert dcName dc
     Nothing -> error $ "Huh?: " ++ show ty
@@ -482,6 +487,29 @@ isTypeLike (C.App e (C.Literal (C.IntegerLiteral i))) = do tyM <- isTypeLike e
                                                              Just ty' -> return $! Just (C.AppTy ty' (C.LitTy (C.NumTy $ fromInteger i)))
                                                              Nothing  -> return $! Nothing
 isTypeLike t                     = return $! Nothing
+
+
+idrisTypeToHWType ::
+  C.Type
+  -> Maybe (Either String HWType)
+idrisTypeToHWType ty@(C.tyView -> C.TyConApp tc args) = runErrorT $
+  case (name2String $ C.tyConName tc) of
+    "__INT__" -> return Integer
+    "Prelude.Vect.Vect" -> do
+      let [szTy,elTy] = args
+      sz     <- tyNatSize szTy
+      elHWTy <- ErrorT $ return $ coreTypeToHWType idrisTypeToHWType elTy
+      return $ Vector sz elHWTy
+    _ -> ErrorT $ Nothing
+
+idrisTypeToHWType _ = Nothing
+
+tyNatSize ::
+  C.Type
+  -> ErrorT String Maybe Int
+tyNatSize (C.LitTy (C.NumTy i)) = return i
+tyNatSize t                     = fail $ $(curLoc) ++ "Can't convert tyNat: " ++ show t
+
 
 splitFunTy :: C.Type -> ([C.Type],C.Type)
 splitFunTy = go []

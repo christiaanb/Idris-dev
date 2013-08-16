@@ -268,7 +268,8 @@ Executable     idris
                               IRTS.Compiler, IRTS.CodegenJava, IRTS.Java.ASTBuilding,
                               IRTS.Java.JTypes, IRTS.Java.Mangling, IRTS.BCImp,
                               IRTS.CodegenJavaScript,
-                              IRTS.CodegenCommon, IRTS.DumpBC
+                              IRTS.CodegenCommon, IRTS.DumpBC,
+                              IRTS.CodeGenCLaSH
 
                               Paths_idris
 
@@ -277,7 +278,8 @@ Executable     idris
                                 containers, process, transformers, filepath,
                                 directory, binary, bytestring, text, pretty,
                                 language-java>=0.2.2, libffi,
-                                vector, vector-binary-instances
+                                vector, vector-binary-instances, clash-lib >= 0.2,
+                                unbound, lens, unordered-containers
 
                Extensions:      MultiParamTypeClasses, FunctionalDependencies,
                                 FlexibleInstances, TemplateHaskell

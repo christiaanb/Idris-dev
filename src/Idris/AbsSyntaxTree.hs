@@ -53,7 +53,7 @@ defaultOpts = IOption { opt_logLevel   = 0
                       , opt_repl       = True
                       , opt_verbose    = True
                       , opt_quiet      = False
-                      , opt_codegen    = ViaCLaSH
+                      , opt_codegen    = ViaC
                       , opt_outputTy   = Executable
                       , opt_ibcsubdir  = ""
                       , opt_importdirs = []
