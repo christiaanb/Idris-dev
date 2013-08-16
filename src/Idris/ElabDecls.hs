@@ -521,7 +521,7 @@ elabClauses info fc opts n_in cs = let n = liftname info n_in in
                     -- question: CAFs in where blocks?
                     tclift $ tfail $ At fc (NoTypeDecl n)
               [ty] -> return ty
-           pats_in <- mapM (elabClause info (TCGen `elem` opts)) 
+           pats_in <- mapM (elabClause info (Dictionary `elem` opts)) 
                            (zip [0..] cs)
            -- if the return type of 'ty' is collapsible, the optimised version should
            -- just do nothing
@@ -553,10 +553,17 @@ elabClauses info fc opts n_in cs = let n = liftname info n_in in
   --                                         show l ++ " = " ++ 
   --                                         show r) pats))
            let tcase = opt_typecase (idris_options ist)
+
+           -- pdef is the compile-time pattern definition with basic
+           -- simplifications applied.
+           -- This will get further optimised for run-time, and, separately,
+           -- further inlined to help with totality checking.
            let pdef = map debind $ map (simpl (tt_ctxt ist)) pats
            
            numArgs <- tclift $ sameLength pdef
 
+           -- patterns after collapsing optimisation applied
+           -- (i.e. check if the function should do nothing at run time)
            optpats <- if doNothing 
                          then return $ [Right (mkApp (P Bound n Erased)
                                                     (take numArgs (repeat Erased)), Erased)]
@@ -592,6 +599,8 @@ elabClauses info fc opts n_in cs = let n = liftname info n_in in
            let pcover = null pmissing
            logLvl 2 $ "Optimising patterns"
            logLvl 5 $ show optpdef
+
+           -- pdef' is the version that gets compiled for run-time
            pdef' <- applyOpts optpdef 
            logLvl 2 $ "Optimised patterns"
            logLvl 5 $ show pdef'
@@ -623,8 +632,9 @@ elabClauses info fc opts n_in cs = let n = liftname info n_in in
            ist <- getIState
            putIState (ist { idris_patdefs = addDef n (pdef', pmissing) 
                                                 (idris_patdefs ist) })
+           let caseInfo = CaseInfo (inlinable opts) (dictionary opts)
            case lookupTy n ctxt of
-               [ty] -> do updateContext (addCasedef n (inlinable opts)
+               [ty] -> do updateContext (addCasedef n caseInfo
                                                        tcase knowncovering 
                                                        reflect
                                                        (AssertTotal `elem` opts)
@@ -636,7 +646,7 @@ elabClauses info fc opts n_in cs = let n = liftname info n_in in
                           when (tot /= Unchecked) $ addIBC (IBCTotal n tot)
                           i <- getIState
                           case lookupDef n (tt_ctxt i) of
-                              (CaseOp _ _ _ _ _ scargs sc scargs' sc' : _) ->
+                              (CaseOp _ _ _ _ scargs sc scargs' sc' : _) ->
                                   do let calls = findCalls sc' scargs'
                                      let used = findUsedArgs sc' scargs'
                                      -- let scg = buildSCG i sc scargs
@@ -671,7 +681,8 @@ elabClauses info fc opts n_in cs = let n = liftname info n_in in
     
     getLHS (_, l, _) = l
 
-    simpl ctxt (Right (x, y)) = Right (normalise ctxt [] x, y)
+    simpl ctxt (Right (x, y)) = Right (normalise ctxt [] x, y) 
+--                                        Core.Evaluate.simplify ctxt False [] y)
     simpl ctxt t = t
 
     specNames [] = Nothing
@@ -733,12 +744,12 @@ checkPossible info fc tcgen fname lhs_in
                do let lhs_tm = orderPats (getInferTerm lhs')
                   case recheck ctxt [] (forget lhs_tm) lhs_tm of
                        OK _ -> return True
-                       _ -> return False
+                       err -> return False
 
 --                   b <- inferredDiff fc (delab' i lhs_tm True) lhs
 --                   return (not b) -- then return (Just lhs_tm) else return Nothing
 --                   trace (show (delab' i lhs_tm True) ++ "\n" ++ show lhs) $ return (not b)
-            Error _ -> return False
+            err@(Error _) -> return False
 
 elabClause :: ElabInfo -> Bool -> (Int, PClause) -> 
               Idris (Either Term (Term, Term))
@@ -1116,7 +1127,7 @@ elabClass info syn doc fc constraints tn ps ds
             Just (syn, o, ty) -> do let ty' = insertConstraint c ty
                                     let ds = map (decorateid defaultdec)
                                                  [PTy "" syn fc [] n ty', 
-                                                  PClauses fc (Inlinable:TCGen:o ++ opts) n cs]
+                                                  PClauses fc (o ++ opts) n cs]
                                     iLOG (show ds)
                                     return (n, ((defaultdec n, ds!!1), ds))
             _ -> fail $ show n ++ " is not a method"
@@ -1130,6 +1141,7 @@ elabClass info syn doc fc constraints tn ps ds
     clause (PClauses _ _ _ _) = True
     clause _ = False
 
+    -- Generate a function for chasing a dictionary constraint
     cfun cn c syn all con
         = do let cfn = UN ('@':'@':show cn ++ "#" ++ show con)
              let mnames = take (length all) $ map (\x -> MN x "meth") [0..]
@@ -1150,8 +1162,10 @@ elabClass info syn doc fc constraints tn ps ds
              addIBC (IBCInstance False conn' cfn)
 --              iputStrLn ("Added " ++ show (conn, cfn, ty))
              return [PTy "" syn fc [] cfn ty,
-                     PClauses fc [Inlinable,TCGen] cfn [PClause fc cfn lhs [] rhs []]]
+                     PClauses fc [Dictionary] cfn [PClause fc cfn lhs [] rhs []]]
 
+    -- Generate a top level function which looks up a method in a given
+    -- dictionary (this is inlinable, always)
     tfun cn c syn all (m, (doc, o, ty)) 
         = do let ty' = insertConstraint c ty
              let mnames = take (length all) $ map (\x -> MN x "meth") [0..]
@@ -1164,7 +1178,7 @@ elabClass info syn doc fc constraints tn ps ds
              iLOG (show (m, ty', capp, margs))
              iLOG (showImp True lhs ++ " = " ++ showImp True rhs)
              return [PTy doc syn fc o m ty',
-                     PClauses fc [Inlinable,TCGen] m [PClause fc m lhs [] rhs []]]
+                     PClauses fc [Inlinable] m [PClause fc m lhs [] rhs []]]
 
     getMArgs (PPi (Imp _ _ _) n ty sc) = IA : getMArgs sc
     getMArgs (PPi (Exp _ _ _) n ty sc) = EA  : getMArgs sc
@@ -1247,7 +1261,7 @@ elabInstance info syn fc cs n ps t expn ds
          let lhs = PRef fc iname
          let rhs = PApp fc (PRef fc (instanceName ci))
                            (map (pexp . mkMethApp) mtys)
-         let idecls = [PClauses fc [Inlinable, TCGen] iname 
+         let idecls = [PClauses fc [Dictionary] iname 
                                  [PClause fc iname lhs [] rhs wb]]
          iLOG (show idecls)
          mapM (elabDecl EAll info) idecls
@@ -1369,7 +1383,7 @@ elabInstance info syn fc cs n ps t expn ds
              addIBC (IBCInstance False conn' cfn)
              iputStrLn ("Added " ++ show (conn, cfn, ty) ++ "\n" ++ show (lhs, rhs))
              return [PTy "" syn fc [] cfn ty,
-                     PClauses fc [Inlinable,TCGen] cfn [PClause fc cfn lhs [] rhs []]]
+                     PClauses fc [Dictionary] cfn [PClause fc cfn lhs [] rhs []]]
 -}
 
 decorateid decorate (PTy doc s f o n t) = PTy doc s f o (decorate n) t
