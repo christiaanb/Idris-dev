@@ -75,8 +75,7 @@ compile codegen f tm
         cpu <- targetCPU
         optimize <- optLevel
         iLOG "Building output"
-        primMap       <- liftIO $ generatePrimMap ["."]
-        clashBindings <- createBindingsCLaSH tm (concat used) primMap
+        iState <- getIState
         case checked of
             OK c -> liftIO $ case codegen of
                                   ViaC ->
@@ -90,8 +89,15 @@ compile codegen f tm
                                   ViaNode ->
                                     codegenJavaScript Node c f outty
                                   ViaLLVM -> codegenLLVM c triple cpu optimize f outty
-                                  ViaCLaSH -> codeGenCLaSH clashBindings primMap
+                                  ViaCLaSH -> do
+                                    dataDir <- getDataDir
+                                    primMap <- generatePrimMap [dataDir </> "clash","."]
+                                    let clashBindings = createBindingsCLaSH iState tm (concat used) primMap
+                                    codeGenCLaSH clashBindings primMap
 
+                                    codegenC c f outty hdrs
+                                      (concatMap mkObj objs)
+                                      (concatMap mkLib libs) NONE
                                   Bytecode -> dumpBC c f
             Error e -> fail $ show e 
   where checkMVs = do i <- getIState

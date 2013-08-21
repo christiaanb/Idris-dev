@@ -45,10 +45,10 @@ import CLaSH.Driver
 import CLaSH.Driver.Types
 import CLaSH.Netlist.Util (coreTypeToHWType)
 import CLaSH.Netlist.Types (HWType(..))
-import CLaSH.Primitives.Types
+import CLaSH.Primitives.Types as C
 import CLaSH.Primitives.Util
 import CLaSH.Rewrite.Types (DebugLevel(..))
-import CLaSH.Util (MonadUnique(..),curLoc,traceIf)
+import CLaSH.Util (MonadUnique(..),traceIf)
 
 -- Local imports
 import Core.CaseTree
@@ -77,20 +77,19 @@ codeGenCLaSH :: BindingMap
 codeGenCLaSH bindingMap primMap =
   generateVHDL bindingMap HashMap.empty HashMap.empty primMap idrisTypeToHWType DebugNone
 
-createBindingsCLaSH :: Term
+createBindingsCLaSH :: IState
+                    -> Term
                     -> [Name]
                     -> PrimMap
-                    -> Idris BindingMap
-createBindingsCLaSH tm used primMap = do
-  i <- getIState
-  let ctxtList  = ctxtAlist (tt_ctxt i)
+                    -> BindingMap
+createBindingsCLaSH iState tm used primMap =
+  let ctxtList  = ctxtAlist (tt_ctxt iState)
       dcTyCons  = filter (isCon . snd) ctxtList
       decs      = filter ((`elem` used) . fst) ctxtList
       dcTcState = makeAllTyDataCons (map defToTyDataCon dcTyCons)
       terms     = map (defToTerm primMap dcTcState) decs
-  liftIO $ putStrLn $ unlines $ map (\(n,d) -> C.showDoc n ++ ": " ++ C.showDoc (C.dcType d)) $ HashMap.toList (dcTcState ^. _3)
-  mapM traceUnused used
-  return $! HashMap.fromList (catMaybes terms)
+  in traceIf False (unlines $ map (\(n,d) -> C.showDoc n ++ ": " ++ C.showDoc (C.dcType d)) $ HashMap.toList (dcTcState ^. _3))
+     (HashMap.fromList (catMaybes terms))
 
 isCon :: Def -> Bool
 isCon (TyDecl _ _) = True
@@ -286,7 +285,7 @@ defToTerm :: PrimMap
           -> Maybe (C.TmName,(String,(C.Type,C.Term)))
 defToTerm primMap _ (n,_)
   | HashMap.member (pack $ name2String $ (toCoreName n :: C.TmName)) primMap = Nothing
-defToTerm primMap s (n,CaseOp _ _ ty _ _ ns sc _ _) = trace ("== " ++ show n ++ " ==:\nTy: " ++ show ty ++ "\nBndrs: " ++ show ns ++ "\nTm:\n" ++ show sc) $ flip Reader.runReader s $ do
+defToTerm primMap s (n,CaseOp _ ty _ _ ns sc _ _) = traceIf False ("== " ++ show n ++ " ==:\nTy: " ++ show ty ++ "\nBndrs: " ++ show ns ++ "\nTm:\n" ++ show sc) $ flip Reader.runReader s $ do
   let tmName   = toCoreName n
       tmString = show n
   tyC <- fmap (maybe (error $ "defToTerm: " ++ showTerm ty) id) $ runMaybeT $ toCoreTypeT False [] [] ty
@@ -298,7 +297,7 @@ defToTerm primMap s (n,CaseOp _ _ ty _ _ ns sc _ _) = trace ("== " ++ show n ++ 
                            ; let termC  = C.mkAbstraction scC bndrs
                            ; let res    = (tmName,(tmString,(tyC,termC)))
                            ; let resTy  = runFreshM $ C.termType termC
-                           ; trace ("CoreTy: " ++ C.showDoc tyC ++ "\nCoreTerm:\n" ++ C.showDoc termC) $
+                           ; traceIf False ("CoreTy: " ++ C.showDoc tyC ++ "\nCoreTerm:\n" ++ C.showDoc termC) $
                                traceIf (tyC /= resTy) ("TYPES DIFFER for " ++ tmString ++ ":\nExpected: " ++ C.showDoc tyC ++ "\nCalculated: " ++ C.showDoc resTy) $
                                  return res
                            }
@@ -405,7 +404,7 @@ toCoreTerm primMap = term
         Just (BlackBox {}) -> do
           tC <- toCoreTypeT True tvs bndrs t
           return $ C.Prim (C.PrimFun nC tC)
-        Just (Primitive _ Dictionary) -> do
+        Just (Primitive _ C.Dictionary) -> do
           tC <- toCoreTypeT True tvs bndrs t
           let liftedFun = C.AlgTyCon { C.tyConName = toCoreName n
                                      , C.tyConKind = tC
@@ -414,6 +413,15 @@ toCoreTerm primMap = term
                                      , C.isDictTyCon = False
                                      }
           return $ C.Prim (C.PrimCo (C.mkTyConTy liftedFun))
+
+        Just (Primitive f C.Function)
+          | f == pack "@Prelude.Functor.Functor$[Signal].0.Prelude.Functor.#!map" -> mapSyncTerm <$> toCoreTypeT True tvs bndrs t
+          | f == pack "@Prelude.Applicative.Applicative$[Signal].0.Prelude.Applicative.#!<$>" -> mapSyncTerm <$> toCoreTypeT True tvs bndrs t
+          | f == pack "@Prelude.Applicative.Applicative$[Signal].0.Prelude.Applicative.#!pure" -> syncTerm <$> toCoreTypeT True tvs bndrs t
+          | f == pack "CLaSH.Signal.Vect.unpack" -> packUnpackVectTerm False <$> toCoreTypeT True tvs bndrs t
+          | f == pack "CLaSH.Signal.Vect.pack" -> packUnpackVectTerm True <$> toCoreTypeT True tvs bndrs t
+          | otherwise -> error $ "pvar: Function: " ++ show f
+
         Nothing -> case nt of
           (DCon _ _) -> do
             dc <- lift $ toDataCon (toCoreName n)
@@ -426,8 +434,8 @@ toCoreTerm primMap = term
             tC <- toCoreTypeT True tvs bndrs t
             let (_,resTy) = splitFunForallTy tC
             if resTy == C.liftedTypeKind
-              then trace ("pvar REF(TY): " ++ show n ++ " : " ++ show t) $! return $! C.Prim (C.PrimCo $ C.mkTyVarTy tC (toCoreName n))
-              else trace ("pvar REF(TM): " ++ show n ++ " : " ++ show t) $! return $! C.Var tC nC
+              then traceIf False ("pvar REF(TY): " ++ show n ++ " : " ++ show t) $! return $! C.Prim (C.PrimCo $ C.mkTyVarTy tC (toCoreName n))
+              else traceIf False ("pvar REF(TM): " ++ show n ++ " : " ++ show t) $! return $! C.Var tC nC
           (TCon _ _) -> do
             tc <- lift $ toTyCon (toCoreName n)
             return $! C.Prim (C.PrimCo (C.mkTyConTy tc))
@@ -437,6 +445,7 @@ toCoreTerm primMap = term
     constant tvs bndrs c@(PtrType) = C.Prim <$> C.PrimCo <$> toCoreTypeT True tvs bndrs (Constant c)
     constant tvs bndrs (BI i)      = return $! C.Literal $! C.IntegerLiteral i
     constant tvs bndrs (Str s)     = return $! C.Literal $! C.StringLiteral s
+    constant tvs bndrs (I i)       = return $! C.Literal $! C.IntegerLiteral (toInteger i)
     constant tvs bndrs c           = error $ "constant: " ++ showConstant c
 
 toCoreAlt :: PrimMap
@@ -495,11 +504,13 @@ idrisTypeToHWType ::
 idrisTypeToHWType ty@(C.tyView -> C.TyConApp tc args) = runErrorT $
   case (name2String $ C.tyConName tc) of
     "__INT__" -> return Integer
+    "CLaSH.Signal.Signal" -> ErrorT $ return $ coreTypeToHWType idrisTypeToHWType (head args)
     "Prelude.Vect.Vect" -> do
       let [szTy,elTy] = args
       sz     <- tyNatSize szTy
       elHWTy <- ErrorT $ return $ coreTypeToHWType idrisTypeToHWType elTy
       return $ Vector sz elHWTy
+    "Data.HVect.HVect" -> error $ "idrisTypeToHWType: " ++ C.showDoc ty ++ "\nShow:\n" ++ show ty
     _ -> ErrorT $ Nothing
 
 idrisTypeToHWType _ = Nothing
@@ -508,7 +519,10 @@ tyNatSize ::
   C.Type
   -> ErrorT String Maybe Int
 tyNatSize (C.LitTy (C.NumTy i)) = return i
-tyNatSize t                     = fail $ $(curLoc) ++ "Can't convert tyNat: " ++ show t
+tyNatSize (C.tyView -> C.TyConApp tc args)
+  | name2String (C.tyConName tc) == "Prelude.Nat.Z" = return 0
+  | name2String (C.tyConName tc) == "Prelude.Nat.S" = succ <$> tyNatSize (head args)
+tyNatSize t                     = error $ "Can't convert tyNat: " ++ show t
 
 
 splitFunTy :: C.Type -> ([C.Type],C.Type)
@@ -595,3 +609,49 @@ safeIndex :: [a] -> Int -> Maybe a
 safeIndex []     _ = Nothing
 safeIndex (x:_)  0 = Just x
 safeIndex (_:xs) n = safeIndex xs (n-1)
+
+mapSyncTerm :: C.Type
+            -> C.Term
+mapSyncTerm (C.ForAllTy tvATy) =
+  let (aTV,C.ForAllTy tvBTy) = unsafeUnbind tvATy
+      (bTV,funTy) = unsafeUnbind tvBTy
+      (aTy,bTy) = case (C.tyView funTy) of
+                    (C.FunTy _ funTy') -> case C.tyView funTy' of
+                      (C.FunTy aTy' bTy') -> (aTy',bTy')
+      fName = string2Name "f"
+      xName = string2Name "x"
+      fTy = C.mkFunTy aTy bTy
+      fId = C.Id fName (embed fTy)
+      xId = C.Id xName (embed aTy)
+  in C.TyLam $ bind aTV $
+     C.TyLam $ bind bTV $
+     C.Lam   $ bind fId $
+     C.Lam   $ bind xId $
+     C.App (C.Var fTy fName) (C.Var aTy xName)
+
+mapSyncTerm ty = error $ "mapSyncTerm: " ++ C.showDoc ty
+
+syncTerm :: C.Type
+         -> C.Term
+syncTerm (C.ForAllTy tvTy) =
+  let (aTV,C.tyView -> C.FunTy _ aTy) = unsafeUnbind tvTy
+      xName = string2Name "x"
+      xId = C.Id xName (embed aTy)
+  in C.TyLam $ bind aTV $
+     C.Lam   $ bind xId $
+     C.Var   aTy xName
+
+packUnpackVectTerm :: Bool
+               -> C.Type
+               -> C.Term
+packUnpackVectTerm isPack (C.ForAllTy tvTy) =
+  let (nTV,C.ForAllTy tvATy) = unsafeUnbind tvTy
+      (aTV,C.tyView -> C.FunTy inpTy outpTy) = unsafeUnbind tvATy
+      xName   = string2Name "x"
+      xTy     = if isPack then outpTy else inpTy
+      xId     = C.Id xName (embed xTy)
+      newExpr = C.TyLam $ bind nTV $
+                C.TyLam $ bind aTV $
+                C.Lam   $ bind xId $
+                C.Var xTy xName
+  in newExpr

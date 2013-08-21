@@ -1,0 +1,311 @@
+[ { "BlackBox" :
+    { "name"      : "@Builtins.Num$[Integer].0.Builtins.#!*"
+    , "templateE" : "~ARG[0] * ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "prim__mulBigInt"
+    , "templateE" : "~ARG[0] * ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Num$[Integer].0.Builtins.#!+"
+    , "templateE" : "~ARG[0] + ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "prim__addBigInt"
+    , "templateE" : "~ARG[0] + ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Num$[Integer].0.Builtins.#!-"
+    , "templateE" : "~ARG[0] - ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "prim__subBigInt"
+    , "templateE" : "~ARG[0] - ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "Builtins.not"
+    , "templateE" : "not ~ARG[0]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Eq$[Integer].0.Builtins.#!/="
+    , "templateE" : "~ARG[0] /= ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Ord$[Integer].0.Builtins.#!<"
+    , "templateE" : "~ARG[0] < ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Ord$[Integer].0.Builtins.#!<="
+    , "templateE" : "~ARG[0] <= ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Eq$[Integer].0.Builtins.#!=="
+    , "templateE" : "~ARG[0] = ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Ord$[Integer].0.Builtins.#!>"
+    , "templateE" : "~ARG[0] > ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Ord$[Integer].0.Builtins.#!>="
+    , "templateE" : "~ARG[0] >= ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Num$[Integer].0.Builtins.#!abs"
+    , "templateE" : "abs ~ARG[0]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Num$[Integer].0.Builtins.#!fromInteger"
+    , "templateE" : "~ARG[0]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Prelude.Foldable.Foldable$[Vect n].0.Prelude.Foldable.#!foldr"
+    , "templateD"  :
+"~SYM[0]_vfoldr : block
+  type ~SYM[7] is array (natural range <>) of ~TYP[1];
+  signal ~SYM[6] : ~TYP[2];
+  signal ~SYM[1] : ~SYM[7](~SYM[6]'high downto 0);
+begin
+  ~SYM[1](0) <= ~ARG[1];
+  ~SYM[6] <= ~ARG[2];
+
+  ~SYM[2]_generate : for ~SYM[3] in 0 to ~SYM[6]'high generate
+  begin
+    ~SYM[4]_generate : if ~SYM[3] /= (~SYM[6]'high) generate
+      ~INST 0
+        ~OUTPUT <= ~SYM[1](~SYM[3]+1)~
+        ~INPUT  <= ~SYM[6](~SYM[3])~
+        ~INPUT  <= ~SYM[1](~SYM[3])~
+      ~INST
+    end generate;
+
+    ~SYM[5]_generate : if ~SYM[3] = (~SYM[6]'high) generate
+      ~INST 0
+        ~OUTPUT <= ~RESULT~
+        ~INPUT  <= ~SYM[6](~SYM[3])~
+        ~INPUT  <= ~SYM[1](~SYM[3])~
+      ~INST
+    end generate;
+  end generate;
+end block;"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "Prelude.Vect.zipWith"
+    , "templateD"  :
+"~SYM[0]_vzipWith : block
+  signal ~SYM[1] : ~TYP[1];
+  signal ~SYM[2] : ~TYP[2];
+begin
+  ~SYM[1] <= ~ARG[1];
+  ~SYM[2] <= ~ARG[2];
+
+  ~SYM[3]_generate : for ~SYM[4] in ~RESULT'high downto 0 generate
+  begin
+    ~INST 0
+      ~OUTPUT <= ~RESULT(~SYM[4])~
+      ~INPUT  <= ~SYM[1](~SYM[4])~
+      ~INPUT  <= ~SYM[2](~SYM[4])~
+    ~INST
+  end generate;
+end block;"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "Prelude.Nat.plus"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "Prelude.Nat.minus"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "Prelude.Nat.mult"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "@Builtins.Num$[Nat].0.Builtins.#!*"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "@Builtins.Num$[Nat].0.Builtins.#!+"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "@Builtins.Num$[Nat].0.Builtins.#!-"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "@Builtins.Num$[Nat].0.Builtins.#!abs"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "@Builtins.Num$[Nat].0.Builtins.#!fromInteger.0.#fromInteger'"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "@Builtins.Num$[Nat].0.Builtins.#!fromInteger"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "@Builtins.Num$[Nat].0.Builtins.#!fromInteger"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "Prelude.Nat.S"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "Prelude.Nat.Z"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Prelude.Functor.Functor$[Vect n].0.Prelude.Functor.#!map"
+    , "templateD"  :
+"~SYM[0]_vmap : block
+  signal ~SYM[1] : ~TYP[1];
+begin
+  ~SYM[1] <= ~ARG[1];
+
+  ~SYM[2]_vmap : for ~SYM[3] in ~RESULT'high downto 0 generate
+  begin
+    ~INST 0
+      ~OUTPUT <= ~RESULT(~SYM[3])~
+      ~INPUT  <= ~SYM[1](~SYM[3])~
+    ~INST
+  end generate;
+end block;"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "Prelude.Vect.replicate"
+    , "templateE" : "~TYPMO'((~LIT[0] - 1) downto 0 => ~ARG[1])"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "@Prelude.Functor.Functor$[Signal].0.Prelude.Functor.#!map"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "@Prelude.Applicative.Applicative$[Signal].0.Prelude.Applicative.#!pure"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "@Prelude.Applicative.Applicative$[Signal].0.Prelude.Applicative.#!<$>"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "CLaSH.Signal.Signal.mapS"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "CLaSH.Signal.Signal.pureS"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "CLaSH.Signal.Signal.appS"
+    , "primType" : "Function"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Prelude.Traversable.Traversable$[Vect n].0.Prelude.Traversable.#!traverse"
+    , "templateE" : "@Prelude.Traversable.Traversable$[Vect n].0.Prelude.Traversable.#!traverse"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "CLaSH.Signal.fromList"
+    , "templateE" : "CLaSH.Signal.fromList"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "Prelude.List.length"
+    , "templateE" : "Prelude.List.length"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "CLaSH.Signal.simulate"
+    , "templateE" : "CLaSH.Signal.simulate"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Prelude.Show$[Vect n a].0.Prelude.#!show.0.#show'"
+    , "templateE" : "@Prelude.Show$[Vect n a].0.Prelude.#!show.0.#show'"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "Prelude.Vect.head"
+    , "templateE" : "~ARG[0](~ARG[0]'high)"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "Prelude.Vect.init"
+    , "templateE" : "~ARG[0](~ARG[0]'high downto 1)"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "CLaSH.Prelude.Vect.+>>"
+    , "templateE" : "~ARG[0] & ~ARG[1](~ARG[1]'high downto 1)"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "CLaSH.Signal.Vect.unpack"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "CLaSH.Signal.Vect.pack"
+    , "primType" : "Function"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "CLaSH.Signal.Signal.register"
+    , "templateD" :
+"~SYM[0]_block : block
+  signal ~SYM[1] : ~TYP[1];
+begin
+  process(~CLK[1],~RST[1]) is
+  begin
+    if ~RST[1] = '0' then
+      ~SYM[1] <= ~ARG[0];
+    elsif rising_edge(~CLK[1]) then
+      ~SYM[1] <= ~ARG[1];
+    end if;
+  end process;
+
+  ~RESULT <= ~SYM[1];
+end block;"
+    }
+  }
+]

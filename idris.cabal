@@ -53,6 +53,7 @@ Data-files:            rts/idris_rts.h rts/idris_gc.h rts/idris_stdfgn.h
                        js/Runtime-common.js
                        js/Runtime-node.js
                        js/Runtime-browser.js
+                       clash/primitives.json
 Extra-source-files:    lib/Makefile  lib/*.idr lib/Prelude/*.idr
                        lib/Network/*.idr lib/Control/*.idr
                        lib/Control/Monad/*.idr lib/Language/*.idr
