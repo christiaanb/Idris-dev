@@ -7,7 +7,7 @@ module IRTS.CodeGenCLaSH
 where
 
 -- External imports
-import           Control.Arrow                (first)
+import           Control.Arrow                (first,second)
 import           Control.Applicative          ((<$>),(<*>),pure)
 import           Control.Monad.Trans          (MonadTrans)
 import           Control.Monad.Trans.Error    (ErrorT(..))
@@ -18,13 +18,15 @@ import           Control.Monad.State          (StateT,lift,liftIO)
 import qualified Control.Monad.State.Lazy     as State
 import           Data.ByteString.Lazy.Char8   (pack)
 import           Data.Either                  (lefts)
+import           Data.Graph.Inductive         (Gr,LNode,lsuc,mkGraph,iDom)
 import           Data.HashMap.Lazy            (HashMap)
 import qualified Data.HashMap.Lazy            as HashMap
-import           Data.Maybe                   (catMaybes,fromMaybe)
+import qualified Data.List                    as List
+import           Data.Maybe                   (catMaybes,fromMaybe,listToMaybe)
 import           Control.Lens                 ((%=),_1,_2,_3,makeLenses,view,(^.))
 import qualified Unbound.LocallyNameless.Name as U
 import           Unbound.LocallyNameless.Ops  (unsafeUnbind)
-import           Unbound.LocallyNameless      (Bind,Rep,bind,embed,makeName,name2String,name2Integer,rebind,runFreshM,runFreshMT,string2Name,unembed)
+import           Unbound.LocallyNameless      (Bind,Rep,bind,embed,makeName,name2String,name2Integer,rebind,rec,runFreshM,runFreshMT,string2Name,unembed)
 
 import Debug.Trace
 
@@ -45,6 +47,7 @@ import CLaSH.Driver
 import CLaSH.Driver.Types
 import CLaSH.Netlist.Util (coreTypeToHWType)
 import CLaSH.Netlist.Types (HWType(..))
+import CLaSH.Normalize.Util (callGraph,recursiveComponents)
 import CLaSH.Primitives.Types as C
 import CLaSH.Primitives.Util
 import CLaSH.Rewrite.Types (DebugLevel(..))
@@ -75,7 +78,7 @@ codeGenCLaSH :: BindingMap
              -> PrimMap
              -> IO ()
 codeGenCLaSH bindingMap primMap =
-  generateVHDL bindingMap HashMap.empty HashMap.empty primMap idrisTypeToHWType DebugNone
+  generateVHDL bindingMap HashMap.empty HashMap.empty primMap idrisTypeToHWType DebugFinal
 
 createBindingsCLaSH :: IState
                     -> Term
@@ -87,9 +90,65 @@ createBindingsCLaSH iState tm used primMap =
       dcTyCons  = filter (isCon . snd) ctxtList
       decs      = filter ((`elem` used) . fst) ctxtList
       dcTcState = makeAllTyDataCons (map defToTyDataCon dcTyCons)
-      terms     = map (defToTerm primMap dcTcState) decs
+      terms     = catMaybes $ map (defToTerm primMap dcTcState) decs
+      terms'    = termPrep terms
   in traceIf False (unlines $ map (\(n,d) -> C.showDoc n ++ ": " ++ C.showDoc (C.dcType d)) $ HashMap.toList (dcTcState ^. _3))
-     (HashMap.fromList (catMaybes terms))
+     terms'
+
+
+termPrep :: [(C.TmName,(C.Type,C.Term))]
+             -> BindingMap
+termPrep bndrs = maybe (HashMap.empty) id $ do
+  (topEntity,_) <- listToMaybe $ filter (List.isSuffixOf "topEntity" . name2String . fst) bndrs
+  let depGraph = callGraph [] (HashMap.fromList $ map (second snd) bndrs) topEntity
+      used     = HashMap.fromList depGraph
+      bndrs'   = HashMap.fromList $ filter ((`HashMap.member` used) . fst) bndrs
+      rcs      = recursiveComponents depGraph
+      dropped  = map (lambdaDrop bndrs' used) rcs
+      bndrs''  = foldr (\(k,v) b -> HashMap.insert k v b) bndrs' dropped
+  return bndrs''
+
+lambdaDrop :: BindingMap
+           -> HashMap C.TmName [C.TmName]
+           -> [C.TmName]
+           -> (C.TmName,(C.Type,C.Term))
+lambdaDrop bndrs cfg cyc@(root:_) = block
+  where
+    doms  = dominator cfg cyc
+    block = blockSink bndrs doms (0,root)
+
+blockSink :: BindingMap
+          -> Gr C.TmName C.TmName
+          -> LNode C.TmName
+          -> (C.TmName,(C.Type,C.Term))
+blockSink bndrs doms (nId,tmName) = (tmName,(ty,newTm))
+  where
+    (ty,tm) = bndrs HashMap.! tmName
+    sucTm   = lsuc doms nId
+    tmS     = map (blockSink bndrs doms) sucTm
+    bnds    = map (\(tN,(ty',tm')) -> (C.Id tN (embed ty'),embed tm')) tmS
+    (tmArgs,tmExpr) = runFreshM $ C.collectBndrs tm
+    newTm   = case sucTm of
+                [] -> tm
+                _  -> C.mkAbstraction (C.Letrec $ bind (rec bnds) tmExpr) tmArgs
+
+
+dominator :: HashMap C.TmName [C.TmName]
+          -> [C.TmName]
+          -> Gr C.TmName C.TmName
+dominator cfg cyc@(root:others) = mkGraph nodes (map (\(e,b) -> (b,e,nodesM HashMap.! e)) doms)
+  where
+    nodes    = zip [0..] cyc
+    nodesM   = HashMap.fromList nodes
+    nodesI   = HashMap.fromList $ zip cyc [0..]
+    cycEdges = HashMap.map ( map (nodesI HashMap.!)
+                           . filter (`elem` cyc)
+                           )
+             $ HashMap.filterWithKey (\k v -> k `elem` cyc) cfg
+    edges    = concatMap (\(i,n) -> zip3 (repeat i) (cycEdges HashMap.! n) (repeat ())
+                         ) nodes
+    graph    = mkGraph nodes edges :: Gr C.TmName ()
+    doms     = iDom graph 0
 
 isCon :: Def -> Bool
 isCon (TyDecl _ _) = True
@@ -282,7 +341,7 @@ toCoreKind ns t = error ("toCoreKind: " ++ show t ++ "\n" ++ showTerm t)
 defToTerm :: PrimMap
           -> MkTyDConState
           -> (Name,Def)
-          -> Maybe (C.TmName,(String,(C.Type,C.Term)))
+          -> Maybe (C.TmName,(C.Type,C.Term))
 defToTerm primMap _ (n,_)
   | HashMap.member (pack $ name2String $ (toCoreName n :: C.TmName)) primMap = Nothing
 defToTerm primMap s (n,CaseOp _ ty _ _ ns sc _ _) = traceIf False ("== " ++ show n ++ " ==:\nTy: " ++ show ty ++ "\nBndrs: " ++ show ns ++ "\nTm:\n" ++ show sc) $ flip Reader.runReader s $ do
@@ -295,7 +354,7 @@ defToTerm primMap s (n,CaseOp _ ty _ _ ns sc _ _) = traceIf False ("== " ++ show
                                                   }) ns args
   result <- runMaybeT $ do { scC <- scToTerm primMap [] (zip ns bndrs) sc
                            ; let termC  = C.mkAbstraction scC bndrs
-                           ; let res    = (tmName,(tmString,(tyC,termC)))
+                           ; let res    = (tmName,(tyC,termC))
                            ; let resTy  = runFreshM $ C.termType termC
                            ; traceIf False ("CoreTy: " ++ C.showDoc tyC ++ "\nCoreTerm:\n" ++ C.showDoc termC) $
                                traceIf (tyC /= resTy) ("TYPES DIFFER for " ++ tmString ++ ":\nExpected: " ++ C.showDoc tyC ++ "\nCalculated: " ++ C.showDoc resTy) $
