@@ -142,6 +142,12 @@ noEffectsFlag flags =
       Just False -> False
       Nothing -> False
 
+clashFlag flags =
+  case lookup (FlagName "clash") (S.configConfigurationsFlags flags) of
+     Just True -> True
+     Just False -> False
+     Nothing -> False
+
 preparePoms version
     = do execPomTemplate <- TIO.readFile ("java" </> "executable_pom_template.xml")
          TIO.writeFile ("java" </> "executable_pom.xml") (insertVersion execPomTemplate)
