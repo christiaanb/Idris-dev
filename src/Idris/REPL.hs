@@ -577,7 +577,9 @@ parseCodegen "bytecode" = Bytecode
 parseCodegen "javascript" = ViaJavaScript
 parseCodegen "node" = ViaNode
 parseCodegen "llvm" = ViaLLVM
+#ifdef CLASH
 parseCodegen "clash" = ViaCLaSH
+#endif
 parseCodegen _ = error "unknown codegen" -- FIXME: partial function
 
 parseArgs :: [String] -> [Opt]

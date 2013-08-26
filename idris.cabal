@@ -53,7 +53,13 @@ Data-files:            rts/idris_rts.h rts/idris_gc.h rts/idris_stdfgn.h
                        js/Runtime-common.js
                        js/Runtime-node.js
                        js/Runtime-browser.js
-                       clash/primitives.json
+                       clash/builtins_functions.json
+                       clash/builtins_primitives.json
+                       clash/prelude_functions.json
+                       clash/prelude_primitives.json
+                       clash/signal_functions.json
+                       clash/signal_primitives.json
+                       clash/vect_functions.json
 Extra-source-files:    lib/Makefile  lib/*.idr lib/Prelude/*.idr
                        lib/Network/*.idr lib/Control/*.idr
                        lib/Control/Monad/*.idr lib/Language/*.idr
@@ -74,6 +80,12 @@ Extra-source-files:    lib/Makefile  lib/*.idr lib/Prelude/*.idr
                        llvm/*.c llvm/Makefile
                        js/*.js
                        java/*.xml
+                       clash/CLaSH/Prelude/Vect.idr
+                       clash/CLaSH/Default.idr
+                       clash/CLaSH/Prelude.idr
+                       clash/CLaSH/Signal.idr
+                       clash/clash.ipkg
+                       clash/Makefile
 
                        Makefile
                        test/Makefile
@@ -243,6 +255,10 @@ Flag LLVM
   Default:      True
   manual:       True
 
+Flag CLaSH
+  Description:  Build the CLASH backend
+  Default:      False
+
 Executable     idris
                Main-is: Main.hs
                hs-source-dirs: src
@@ -270,7 +286,6 @@ Executable     idris
                               IRTS.Java.JTypes, IRTS.Java.Mangling, IRTS.BCImp,
                               IRTS.CodegenJavaScript,
                               IRTS.CodegenCommon, IRTS.DumpBC,
-                              IRTS.CodeGenCLaSH
 
                               Paths_idris
 
@@ -279,8 +294,7 @@ Executable     idris
                                 containers, process, transformers, filepath,
                                 directory, binary, bytestring, text, pretty,
                                 language-java>=0.2.2, libffi,
-                                vector, vector-binary-instances, clash-lib >= 0.2,
-                                unbound, lens, unordered-containers
+                                vector, vector-binary-instances
 
                Extensions:      MultiParamTypeClasses, FunctionalDependencies,
                                 FlexibleInstances, TemplateHaskell
@@ -301,3 +315,16 @@ Executable     idris
                   build-depends: llvm-general==3.3.5.*
                else
                   other-modules: Util.LLVMStubs
+
+               if flag(CLaSH)
+                  cpp-options: -DCLASH
+                  other-modules: IRTS.CLaSH.Idris2Core,
+                                 IRTS.CLaSH.NetlistTypes,
+                                 IRTS.CLaSH.Show,
+                                 IRTS.CLaSH.Util,
+                                 IRTS.CodeGenCLaSH
+                  Build-depends: clash-lib >= 0.2,
+                                 unbound,
+                                 lens,
+                                 unordered-containers,
+                                 fgl

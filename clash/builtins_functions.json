@@ -1,0 +1,76 @@
+[ { "BlackBox" :
+    { "name"      : "@Builtins.Num$[Integer].0.Builtins.#!*"
+    , "templateE" : "~ARG[0] * ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "prim__mulBigInt"
+    , "templateE" : "~ARG[0] * ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Num$[Integer].0.Builtins.#!+"
+    , "templateE" : "~ARG[0] + ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "prim__addBigInt"
+    , "templateE" : "~ARG[0] + ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Num$[Integer].0.Builtins.#!-"
+    , "templateE" : "~ARG[0] - ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "prim__subBigInt"
+    , "templateE" : "~ARG[0] - ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "Builtins.not"
+    , "templateE" : "not ~ARG[0]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Eq$[Integer].0.Builtins.#!/="
+    , "templateE" : "~ARG[0] /= ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Ord$[Integer].0.Builtins.#!<"
+    , "templateE" : "~ARG[0] < ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Ord$[Integer].0.Builtins.#!<="
+    , "templateE" : "~ARG[0] <= ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Eq$[Integer].0.Builtins.#!=="
+    , "templateE" : "~ARG[0] = ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Ord$[Integer].0.Builtins.#!>"
+    , "templateE" : "~ARG[0] > ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Ord$[Integer].0.Builtins.#!>="
+    , "templateE" : "~ARG[0] >= ~ARG[1]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Num$[Integer].0.Builtins.#!abs"
+    , "templateE" : "abs ~ARG[0]"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Builtins.Num$[Integer].0.Builtins.#!fromInteger"
+    , "templateE" : "~ARG[0]"
+    }
+  }
+]

@@ -22,6 +22,7 @@ test_java:
 relib:
 	$(MAKE) -C lib IDRIS=../dist/build/idris/idris RTS=../dist/build/rts/libidris_rts clean
 	$(MAKE) -C effects IDRIS=../dist/build/idris/idris RTS=../dist/build/rts/libidris_rts DIST=../dist/build clean
+	$(MAKE) -C clash IDRIS=../dist/build/idris/idris RTS=../dist/build/rts/libidris_rts DIST=../dist/build clean
 	$(MAKE) -C javascript IDRIS=../dist/build/idris/idris RTS=../dist/build/rts/libidris_rts DIST=../dist/build clean
 	$(CABAL) install $(CABALFLAGS)
 

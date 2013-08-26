@@ -1,0 +1,16 @@
+[ { "BlackBox" :
+    { "name"      : "Prelude.List.length"
+    , "templateE" : "Prelude.List.length"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Prelude.Traversable.Traversable$[Vect n].0.Prelude.Traversable.#!traverse"
+    , "templateE" : "@Prelude.Traversable.Traversable$[Vect n].0.Prelude.Traversable.#!traverse"
+    }
+  }
+, { "BlackBox" :
+    { "name"      : "@Prelude.Show$[Vect n a].0.Prelude.#!show.0.#show'"
+    , "templateE" : "@Prelude.Show$[Vect n a].0.Prelude.#!show.0.#show'"
+    }
+  }
+]

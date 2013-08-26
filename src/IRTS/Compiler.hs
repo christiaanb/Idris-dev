@@ -17,8 +17,10 @@ import Util.LLVMStubs
 #endif
 import IRTS.Inliner
 
+#ifdef CLASH
 import IRTS.CodeGenCLaSH
 import CLaSH.Primitives.Util
+#endif
 
 import Idris.AbsSyntax
 import Idris.UnusedArgs
@@ -75,7 +77,9 @@ compile codegen f tm
         cpu <- targetCPU
         optimize <- optLevel
         iLOG "Building output"
+#ifdef CLASH
         iState <- getIState
+#endif
         case checked of
             OK c -> liftIO $ case codegen of
                                   ViaC ->
@@ -89,15 +93,18 @@ compile codegen f tm
                                   ViaNode ->
                                     codegenJavaScript Node c f outty
                                   ViaLLVM -> codegenLLVM c triple cpu optimize f outty
+#ifdef CLASH
                                   ViaCLaSH -> do
                                     dataDir <- getDataDir
                                     primMap <- generatePrimMap [dataDir </> "clash","."]
-                                    let clashBindings = createBindingsCLaSH iState tm (concat used) primMap
-                                    codeGenCLaSH clashBindings primMap
+                                    let lgLvl = opt_logLevel (idris_options iState)
+                                        clashBindings = createBindingsCLaSH lgLvl iState (concat used) primMap
+                                    codeGenCLaSH lgLvl clashBindings primMap
 
                                     codegenC c f outty hdrs
                                       (concatMap mkObj objs)
                                       (concatMap mkLib libs) NONE
+#endif
                                   Bytecode -> dumpBC c f
             Error e -> fail $ show e 
   where checkMVs = do i <- getIState

@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, DeriveFunctor,
-             TypeSynonymInstances, PatternGuards #-}
+             TypeSynonymInstances, PatternGuards, CPP #-}
 
 module Idris.AbsSyntaxTree where
 
@@ -184,7 +184,9 @@ data Codegen = ViaC
              | ViaNode
              | ViaJavaScript
              | ViaLLVM
+#ifdef CLASH
              | ViaCLaSH
+#endif
              | Bytecode
     deriving (Show, Eq)
 

@@ -1,0 +1,36 @@
+[ { "Primitive" :
+    { "name"      : "@Builtins.Num$[Nat].0.Builtins.#!*"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "@Builtins.Num$[Nat].0.Builtins.#!+"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "@Builtins.Num$[Nat].0.Builtins.#!-"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "@Builtins.Num$[Nat].0.Builtins.#!abs"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "@Builtins.Num$[Nat].0.Builtins.#!fromInteger.0.#fromInteger'"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "@Builtins.Num$[Nat].0.Builtins.#!fromInteger"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "@Builtins.Num$[Nat].0.Builtins.#!fromInteger"
+    , "primType" : "Dictionary"
+    }
+  }
+]

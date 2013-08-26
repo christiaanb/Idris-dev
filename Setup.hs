@@ -37,6 +37,7 @@ rtsDir local = ".." </> buildDir local </> "rts" </> "libidris_rts"
 cleanStdLib verbosity
     = do make verbosity [ "-C", "lib", "clean", "IDRIS=idris" ]
          make verbosity [ "-C", "effects", "clean", "IDRIS=idris" ]
+         make verbosity [ "-C", "clash", "clean", "IDRIS=idris" ]
          make verbosity [ "-C", "javascript", "clean", "IDRIS=idris" ]
 
 cleanJavaPom verbosity 
@@ -45,7 +46,7 @@ cleanJavaPom verbosity
 
 cleanLLVMLib verbosity = make verbosity ["-C", "llvm", "clean"]
 
-installStdLib pkg local withoutEffects verbosity copy
+installStdLib pkg local withoutEffects withCLaSH verbosity copy
     = do let dirs = L.absoluteInstallDirs pkg local copy
          let idir = datadir dirs
          let icmd = idrisCmd local
@@ -58,6 +59,12 @@ installStdLib pkg local withoutEffects verbosity copy
          unless withoutEffects $
            make verbosity
                  [ "-C", "effects", "install"
+                 , "TARGET=" ++ idir
+                 , "IDRIS=" ++ icmd
+                 ]
+         when withCLaSH $ do
+           make verbosity
+                 [ "-C", "clash", "install"
                  , "TARGET=" ++ idir
                  , "IDRIS=" ++ icmd
                  ]
@@ -97,7 +104,7 @@ removeLibIdris local verbosity
                , "IDRIS=" ++ icmd
                ]
 
-checkStdLib local withoutEffects verbosity
+checkStdLib local withoutEffects withCLaSH verbosity
     = do let icmd = idrisCmd local
          putStrLn $ "Building libraries..."
          make verbosity
@@ -107,6 +114,11 @@ checkStdLib local withoutEffects verbosity
          unless withoutEffects $
            make verbosity
                [ "-C", "effects", "check"
+               , "IDRIS=" ++ icmd
+               ]
+         when withCLaSH $
+           make verbosity
+               [ "-C", "clash", "check"
                , "IDRIS=" ++ icmd
                ]
          make verbosity
@@ -144,7 +156,8 @@ main = do
         { postCopy = \ _ flags pkg lbi -> do
               let verb = S.fromFlag $ S.copyVerbosity flags
               let withoutEffects = noEffectsFlag $ configFlags lbi
-              installStdLib pkg lbi withoutEffects verb
+              let withCLaSH = clashFlag $ configFlags lbi
+              installStdLib pkg lbi withoutEffects withCLaSH verb
                                     (S.fromFlag $ S.copyDest flags)
               installJavaPom pkg lbi verb 
                                    (S.fromFlag $ S.copyDest flags)
@@ -154,7 +167,8 @@ main = do
        , postInst = \ _ flags pkg lbi -> do
               let verb = (S.fromFlag $ S.installVerbosity flags)
               let withoutEffects = noEffectsFlag $ configFlags lbi
-              installStdLib pkg lbi withoutEffects verb
+              let withCLaSH = clashFlag $ configFlags lbi
+              installStdLib pkg lbi withoutEffects withCLaSH verb
                                     NoCopyDest
               installJavaPom pkg lbi verb 
                                    NoCopyDest 
@@ -173,5 +187,6 @@ main = do
               let verb = S.fromFlag $ S.buildVerbosity flags
               when (llvmFlag $ configFlags lbi) (buildLLVMLib verb)
               let withoutEffects = noEffectsFlag $ configFlags lbi
-              checkStdLib lbi withoutEffects verb
+              let withCLaSH = clashFlag $ configFlags lbi
+              checkStdLib lbi withoutEffects withCLaSH verb
         }

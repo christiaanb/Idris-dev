@@ -1,0 +1,41 @@
+[ { "Primitive" :
+    { "name"     : "@Prelude.Functor.Functor$[Signal].0.Prelude.Functor.#!map"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "@Prelude.Applicative.Applicative$[Signal].0.Prelude.Applicative.#!pure"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "@Prelude.Applicative.Applicative$[Signal].0.Prelude.Applicative.#!<$>"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "CLaSH.Signal.Signal.mapS"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "CLaSH.Signal.Signal.pureS"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "CLaSH.Signal.Signal.appS"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "CLaSH.Signal.Vect.unpack"
+    , "primType" : "Function"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "CLaSH.Signal.Vect.pack"
+    , "primType" : "Function"
+    }
+  }
+]

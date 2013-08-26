@@ -1,0 +1,26 @@
+[ { "Primitive" :
+    { "name"      : "Prelude.Nat.plus"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "Prelude.Nat.minus"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"      : "Prelude.Nat.mult"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "Prelude.Nat.S"
+    , "primType" : "Dictionary"
+    }
+  }
+, { "Primitive" :
+    { "name"     : "Prelude.Nat.Z"
+    , "primType" : "Dictionary"
+    }
+  }
+]

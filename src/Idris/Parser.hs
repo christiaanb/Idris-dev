@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, ScopedTypeVariables #-}
+{-# LANGUAGE PatternGuards, ScopedTypeVariables, CPP #-}
 -- | Parse the full Idris language.
 module Idris.Parser where
 
@@ -1576,7 +1576,9 @@ pCodegen = try (do reserved "C"; return ViaC)
        <|> try (do reserved "JavaScript"; return ViaJavaScript)
        <|> try (do reserved "Node"; return ViaNode)
        <|> try (do reserved "LLVM"; return ViaLLVM)
+#ifdef CLASH
        <|> try (do reserved "CLaSH"; return ViaCLaSH)
+#endif
        <|> try (do reserved "Bytecode"; return Bytecode)
 
 pDirective :: SyntaxInfo -> IParser [PDecl]
