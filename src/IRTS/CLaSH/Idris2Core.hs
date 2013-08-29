@@ -155,25 +155,25 @@ toCoreType ns bndrs (Bind n (Pi ki) res) =
 
 toCoreType _ _     (P (TCon _ _) n _) = C.mkTyConTy <$> lift (toTyCon (toCoreName n))
 toCoreType _ _     (P (DCon _ _) n _) = C.mkTyConTy <$> lift (toTyCon (toCoreName n))
-toCoreType _ _     (P Ref n _)        = return (C.mkTyConTy $ C.mkPrimTyCon (toCoreName n) C.liftedTypeKind 0 C.VoidRep)
+toCoreType _ _     (P Ref n _)        = return (C.mkTyConTy $ C.PrimTyCon (toCoreName n) C.liftedTypeKind 0 C.VoidRep)
 toCoreType _ bndrs t@(P Bound n _)    = case lookup n bndrs of
-                                          Just (Left id_) -> return $! C.mkTyVarTy (unembed $ C.varType id_) (U.translate $ C.varName id_)
-                                          Just (Right tv) -> return $! C.mkTyVarTy (unembed $ C.varKind tv)  (C.varName tv)
+                                          Just (Left id_) -> return $! C.VarTy (unembed $ C.varType id_) (U.translate $ C.varName id_)
+                                          Just (Right tv) -> return $! C.VarTy (unembed $ C.varKind tv)  (C.varName tv)
                                           Nothing -> error ("toCoreType Bound notfound: " ++ showTerm t ++ show bndrs)
 toCoreType ns _ (V i) = let (tyN,tyK) = maybe (error ("Index(toCoreType): " ++ show i ++ " not found in: " ++ show ns)) id (safeIndex ns i)
-                        in return $! C.mkTyVarTy tyK tyN
+                        in return $! C.VarTy tyK tyN
 
 toCoreType ns bndrs (App ty1 ty2) = C.AppTy <$> toCoreType ns bndrs ty1 <*> toCoreType ns bndrs ty2
 
 toCoreType _ _ (Constant (AType (ATInt ITBig)))         = return C.intPrimTy
 toCoreType _ _ (Constant (AType (ATInt ITNative)))      = return C.intPrimTy
-toCoreType _ _ t@(Constant (AType (ATInt (ITFixed _)))) = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name $ show t) C.liftedTypeKind 0 C.IntRep)
-toCoreType _ _ t@(Constant (AType (ATInt (ITVec _ _)))) = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name $ show t) C.liftedTypeKind 0 C.IntRep)
+toCoreType _ _ t@(Constant (AType (ATInt (ITFixed _)))) = return (C.mkTyConTy $ C.PrimTyCon (string2Name $ show t) C.liftedTypeKind 0 C.IntRep)
+toCoreType _ _ t@(Constant (AType (ATInt (ITVec _ _)))) = return (C.mkTyConTy $ C.PrimTyCon (string2Name $ show t) C.liftedTypeKind 0 C.IntRep)
 
-toCoreType _ _ (Constant (AType (ATInt ITChar))) = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name "Char") C.liftedTypeKind 0 C.VoidRep)
-toCoreType _ _ (Constant (AType ATFloat))        = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name "Float") C.liftedTypeKind 0 C.VoidRep)
-toCoreType _ _ (Constant (Str s))                = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name s) C.liftedTypeKind 0 C.VoidRep)
-toCoreType _ _ (Constant StrType)                = return (C.mkTyConTy $ C.mkPrimTyCon (string2Name "String") C.liftedTypeKind 0 C.VoidRep)
+toCoreType _ _ (Constant (AType (ATInt ITChar))) = return (C.mkTyConTy $ C.PrimTyCon (string2Name "Char") C.liftedTypeKind 0 C.VoidRep)
+toCoreType _ _ (Constant (AType ATFloat))        = return (C.mkTyConTy $ C.PrimTyCon (string2Name "Float") C.liftedTypeKind 0 C.VoidRep)
+toCoreType _ _ (Constant (Str s))                = return (C.mkTyConTy $ C.PrimTyCon (string2Name s) C.liftedTypeKind 0 C.VoidRep)
+toCoreType _ _ (Constant StrType)                = return (C.mkTyConTy $ C.PrimTyCon (string2Name "String") C.liftedTypeKind 0 C.VoidRep)
 toCoreType _ _ (Constant PtrType)                = return C.voidPrimTy
 
 toCoreType _ _ (Constant (BI i)) = return $! C.LitTy (C.NumTy $! fromInteger i)
@@ -239,7 +239,7 @@ scToTerm logLvl primMap tvs bndrs (STerm t) = toCoreTerm logLvl primMap tvs bndr
 scToTerm logLvl primMap tvs bndrs sc@(Case n alts) = do
   let scrut = case lookup n bndrs of
                      Just (Left (C.Id n' t'))     -> C.Var (unembed t') n'
-                     Just (Right (C.TyVar n' t')) -> C.Prim (C.PrimCo (C.mkTyVarTy (unembed t') n'))
+                     Just (Right (C.TyVar n' t')) -> C.Prim (C.PrimCo (C.VarTy (unembed t') n'))
                      _ -> error ("scrut: " ++ show bndrs ++ show sc)
   altsC <- mapM (toCoreAlt logLvl primMap tvs bndrs) alts
   ty    <- MaybeT $ return (case altsC of
@@ -266,7 +266,7 @@ toCoreTerm logLvl primMap = term
     term _ bndrs (V i) =
       case safeIndex bndrs i of
         Just (_,Left  (C.Id n t))    -> return $! C.Var (unembed t) n
-        Just (_,Right (C.TyVar n t)) -> return $! C.Prim (C.PrimCo (C.mkTyVarTy (unembed t) n))
+        Just (_,Right (C.TyVar n t)) -> return $! C.Prim (C.PrimCo (C.VarTy (unembed t) n))
         _ -> error ("Index(term): " ++ show i ++ " not found in: " ++ show bndrs)
 
     term tvs bndrs (Bind n (Lam bndr) t) =
@@ -353,13 +353,13 @@ toCoreTerm logLvl primMap = term
             return $! (C.Data dc)
           Bound -> case lookup n bndrs of
             Just (Left  (C.Id n' t'))    -> return $! C.Var (unembed t') n'
-            Just (Right (C.TyVar n' t')) -> return $! C.Prim (C.PrimCo (C.mkTyVarTy (unembed t') n'))
+            Just (Right (C.TyVar n' t')) -> return $! C.Prim (C.PrimCo (C.VarTy (unembed t') n'))
             _ -> error $ "Bound var " ++ show (n,t) ++ " not found in: " ++ show bndrs
           Ref -> do
             tC <- toCoreType tvs bndrs t
             let (_,resTy) = splitFunForallTy tC
             if resTy == C.liftedTypeKind
-              then traceIf (logLvl >= 2) ("pvar REF(TY): " ++ show n ++ " : " ++ show t) $! return $! C.Prim (C.PrimCo $ C.mkTyVarTy tC (toCoreName n))
+              then traceIf (logLvl >= 2) ("pvar REF(TY): " ++ show n ++ " : " ++ show t) $! return $! C.Prim (C.PrimCo $ C.VarTy tC (toCoreName n))
               else traceIf (logLvl >= 2) ("pvar REF(TM): " ++ show n ++ " : " ++ show t) $! return $! C.Var tC nC
           (TCon _ _) -> do
             tc <- lift $ toTyCon (toCoreName n)
