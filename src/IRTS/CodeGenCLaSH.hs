@@ -44,7 +44,7 @@ codeGenCLaSH :: Int
              -> PrimMap
              -> IO ()
 codeGenCLaSH logLvl bindingMap primMap =
-  generateVHDL bindingMap HashMap.empty HashMap.empty primMap idrisTypeToHWType dbgLevel
+  generateVHDL bindingMap primMap idrisTypeToHWType dbgLevel
   where
     dbgLevel = case logLvl of
       0 -> DebugNone

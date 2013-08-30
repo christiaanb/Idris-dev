@@ -17,6 +17,7 @@ import           Data.Either                  (lefts)
 import           Data.HashMap.Lazy            (HashMap)
 import qualified Data.HashMap.Lazy            as HashMap
 import           Data.Maybe                   (catMaybes,fromMaybe)
+import qualified Data.Text.Lazy               as Text
 import           Unbound.LocallyNameless      (Bind,bind,embed,name2String,rebind,runFreshM,runFreshMT,string2Name,unembed)
 import qualified Unbound.LocallyNameless.Name as U
 import           Unbound.LocallyNameless.Ops  (unsafeUnbind)
@@ -25,17 +26,15 @@ import           Unbound.LocallyNameless.Ops  (unsafeUnbind)
 import qualified CLaSH.Core.DataCon           as C
 import qualified CLaSH.Core.Literal           as C
 import qualified CLaSH.Core.Pretty            as C
-import qualified CLaSH.Core.Prim              as C
 import qualified CLaSH.Core.Term              as C
 import qualified CLaSH.Core.TyCon             as C
 import qualified CLaSH.Core.Type              as C
 import qualified CLaSH.Core.TysPrim           as C
 import qualified CLaSH.Core.Util              as C
 import qualified CLaSH.Core.Var               as C
-import qualified CLaSH.Primitives.Types       as C
 import           CLaSH.Primitives.Types       (Primitive(..),PrimMap)
 import qualified CLaSH.Rewrite.Util           as C
-import           CLaSH.Util                   (MonadUnique(..),traceIf)
+import           CLaSH.Util                   (traceIf)
 
 -- Local imports
 import Core.CaseTree
@@ -48,12 +47,6 @@ type MkTyDConState = (HashMap C.TyConName C.TyCon, HashMap C.TyConName [C.DataCo
 type R             = Reader MkTyDConState
 type SR a          = StateT MkTyDConState R a
 type CoreAlt       = Bind C.Pat C.Term
-
-instance Monad m => MonadUnique (StateT Int m) where
-  getUniqueM = do
-    supply <- State.get
-    State.modify (+1)
-    return supply
 
 makeAllTyDataCons :: [(Name,NameType,Type)]
                   -> MkTyDConState
@@ -92,7 +85,6 @@ makeDataCon (n,DCon t _,ty) = do
                             , C.tyConKind = dcTy
                             , C.tyConArity = (length tyVars + length argTys)
                             , C.algTcRhs = C.DataTyCon []
-                            , C.isDictTyCon = False
                             }
 
   case (C.splitTyConAppM resTy) of
@@ -115,7 +107,6 @@ makeTyCon (n,TCon _ a,ty) = do
                       , C.tyConKind   = tcKi
                       , C.tyConArity  = a
                       , C.algTcRhs    = C.DataTyCon dcs
-                      , C.isDictTyCon = False
                       }
   _1 %= HashMap.insert tcName tc
 
@@ -239,7 +230,7 @@ scToTerm logLvl primMap tvs bndrs (STerm t) = toCoreTerm logLvl primMap tvs bndr
 scToTerm logLvl primMap tvs bndrs sc@(Case n alts) = do
   let scrut = case lookup n bndrs of
                      Just (Left (C.Id n' t'))     -> C.Var (unembed t') n'
-                     Just (Right (C.TyVar n' t')) -> C.Prim (C.PrimCo (C.VarTy (unembed t') n'))
+                     Just (Right (C.TyVar n' t')) -> C.Prim (string2Name "_TY_") (C.VarTy (unembed t') n')
                      _ -> error ("scrut: " ++ show bndrs ++ show sc)
   altsC <- mapM (toCoreAlt logLvl primMap tvs bndrs) alts
   ty    <- MaybeT $ return (case altsC of
@@ -266,7 +257,7 @@ toCoreTerm logLvl primMap = term
     term _ bndrs (V i) =
       case safeIndex bndrs i of
         Just (_,Left  (C.Id n t))    -> return $! C.Var (unembed t) n
-        Just (_,Right (C.TyVar n t)) -> return $! C.Prim (C.PrimCo (C.VarTy (unembed t) n))
+        Just (_,Right (C.TyVar n t)) -> return $! C.Prim (string2Name "_TY_") (C.VarTy (unembed t) n)
         _ -> error ("Index(term): " ++ show i ++ " not found in: " ++ show bndrs)
 
     term tvs bndrs (Bind n (Lam bndr) t) =
@@ -318,7 +309,7 @@ toCoreTerm logLvl primMap = term
 
     term _ _ Erased           = error $ "termErased         : "
     term _ _ Impossible       = error $ "termImpossible     : "
-    term _ _ (TType _)        = return $ C.Prim (C.PrimCo C.liftedTypeKind)
+    term _ _ (TType _)        = return (C.Prim (string2Name "_TY_") C.liftedTypeKind)
 
     pvar tvs bndrs nt n t = do
       let nC   = toCoreName n :: C.TmName
@@ -326,18 +317,17 @@ toCoreTerm logLvl primMap = term
       case HashMap.lookup nBS primMap of
         Just (BlackBox {}) -> do
           tC <- toCoreType tvs bndrs t
-          return $ C.Prim (C.PrimFun nC tC)
-        Just (Primitive _ C.Dictionary) -> do
-          tC <- toCoreType tvs bndrs t
-          let liftedFun = C.AlgTyCon { C.tyConName = toCoreName n
-                                     , C.tyConKind = tC
-                                     , C.tyConArity = length $ fst $ splitFunForallTy tC
-                                     , C.algTcRhs = C.DataTyCon []
-                                     , C.isDictTyCon = False
-                                     }
-          return $ C.Prim (C.PrimCo (C.mkTyConTy liftedFun))
+          return (C.Prim nC tC)
+        Just (Primitive _ ((== Text.pack "Dictionary") -> True)) -> do
+            tC <- toCoreType tvs bndrs t
+            let liftedFun = C.AlgTyCon { C.tyConName = toCoreName n
+                                       , C.tyConKind = tC
+                                       , C.tyConArity = length $ fst $ splitFunForallTy tC
+                                       , C.algTcRhs = C.DataTyCon []
+                                       }
+            return (C.Prim (string2Name "_TY_") (C.mkTyConTy liftedFun))
 
-        Just (Primitive f C.Function)
+        Just (Primitive f ((== Text.pack "Function") -> True))
           | f == pack "@Prelude.Functor.Functor$[Signal].0.Prelude.Functor.#!map"              -> mapSyncTerm <$> toCoreType tvs bndrs t
           | f == pack "@Prelude.Applicative.Applicative$[Signal].0.Prelude.Applicative.#!<$>"  -> mapSyncTerm <$> toCoreType tvs bndrs t
           | f == pack "@Prelude.Applicative.Applicative$[Signal].0.Prelude.Applicative.#!pure" -> syncTerm    <$> toCoreType tvs bndrs t
@@ -345,7 +335,7 @@ toCoreTerm logLvl primMap = term
           | f == pack "CLaSH.Signal.Vect.pack"   -> packUnpackVectTerm True  <$> toCoreType tvs bndrs t
           | otherwise -> error $ "pvar: Function: " ++ show f
 
-        Just (Primitive f C.Constructor) -> error $ "pvar: Constructor: " ++ show f
+        Just (Primitive f _) -> error $ "pvar: Other primitive: " ++ show f
 
         Nothing -> case nt of
           (DCon _ _) -> do
@@ -353,21 +343,21 @@ toCoreTerm logLvl primMap = term
             return $! (C.Data dc)
           Bound -> case lookup n bndrs of
             Just (Left  (C.Id n' t'))    -> return $! C.Var (unembed t') n'
-            Just (Right (C.TyVar n' t')) -> return $! C.Prim (C.PrimCo (C.VarTy (unembed t') n'))
+            Just (Right (C.TyVar n' t')) -> return $! C.Prim (string2Name "_TY_") (C.VarTy (unembed t') n')
             _ -> error $ "Bound var " ++ show (n,t) ++ " not found in: " ++ show bndrs
           Ref -> do
             tC <- toCoreType tvs bndrs t
             let (_,resTy) = splitFunForallTy tC
             if resTy == C.liftedTypeKind
-              then traceIf (logLvl >= 2) ("pvar REF(TY): " ++ show n ++ " : " ++ show t) $! return $! C.Prim (C.PrimCo $ C.VarTy tC (toCoreName n))
+              then traceIf (logLvl >= 2) ("pvar REF(TY): " ++ show n ++ " : " ++ show t) $! return $! C.Prim (string2Name "_TY_") (C.VarTy tC (toCoreName n))
               else traceIf (logLvl >= 2) ("pvar REF(TM): " ++ show n ++ " : " ++ show t) $! return $! C.Var tC nC
           (TCon _ _) -> do
             tc <- lift $ toTyCon (toCoreName n)
-            return $! C.Prim (C.PrimCo (C.mkTyConTy tc))
+            return $! C.Prim (string2Name "_TY_") (C.mkTyConTy tc)
 
-    constant tvs bndrs c@(AType _) = C.Prim <$> C.PrimCo <$> toCoreType tvs bndrs (Constant c)
-    constant tvs bndrs c@(StrType) = C.Prim <$> C.PrimCo <$> toCoreType tvs bndrs (Constant c)
-    constant tvs bndrs c@(PtrType) = C.Prim <$> C.PrimCo <$> toCoreType tvs bndrs (Constant c)
+    constant tvs bndrs c@(AType _) = C.Prim (string2Name "_TY_") <$> toCoreType tvs bndrs (Constant c)
+    constant tvs bndrs c@(StrType) = C.Prim (string2Name "_TY_") <$> toCoreType tvs bndrs (Constant c)
+    constant tvs bndrs c@(PtrType) = C.Prim (string2Name "_TY_") <$> toCoreType tvs bndrs (Constant c)
 
     constant _   _     (BI i)      = return $! C.Literal $! C.IntegerLiteral i
     constant _   _     (I i)       = return $! C.Literal $! C.IntegerLiteral (toInteger i)
@@ -404,7 +394,7 @@ toCoreAlt _ _ _ _ a = error $ "OtherAlt: " ++ show a
 
 isTypeLike :: C.Term
            -> R (Maybe C.Type)
-isTypeLike (C.Prim (C.PrimCo t)) = return $! Just t
+isTypeLike (C.Prim (name2String -> "_TY_") t) = return $! Just t
 
 isTypeLike (C.TyApp t ty) = do
   tyM <- isTypeLike t
